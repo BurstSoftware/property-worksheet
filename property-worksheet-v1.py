@@ -5,156 +5,170 @@ import base64
 import io
 
 # ────────────────────────────────
-# Session state
+# Session state initialization
 # ────────────────────────────────
-if 'data' not in st.session_state:
-    st.session_state.data = {}
+if 'assets' not in st.session_state:
+    st.session_state.assets = {}
 
-# Minimal set of categories (expand as needed)
+# Main categories (add more as needed)
 CATEGORIES = [
-    'real_estate',
-    'cash_checking',
-    'bitcoin',
-    'stocks',
-    'retirement_accounts',
-    'vehicles',
-    'personal_property',
-    'digital_assets'
+    "real_estate",
+    "cash_checking",
+    "savings",
+    "bitcoin",
+    "other_crypto",
+    "stocks",
+    "retirement",
+    "vehicles",
+    "precious_metals",
+    "jewelry_collectibles",
+    "digital_accounts",
+    "business_entities"
 ]
 
 for cat in CATEGORIES:
-    if cat not in st.session_state.data:
-        st.session_state.data[cat] = []
+    if cat not in st.session_state.assets:
+        st.session_state.assets[cat] = []
 
-st.title("Asset Inventory – Fixed Version")
+st.title("Asset Inventory")
 
 # ────────────────────────────────
-# Field definition per category
+# Field definitions per category
 # ────────────────────────────────
-def get_fields(cat):
-    base = {
-        'description': 'text',
-        'value': 'number',
-        'notes': 'textarea'
+def get_fields(category):
+    base_fields = {
+        "description": "text",
+        "value_usd": "number",
+        "notes": "textarea"
     }
-    extras = {
-        'real_estate':     {'address': 'text'},
-        'cash_checking':   {'bank': 'text', 'account': 'text'},
-        'bitcoin':         {'wallet': 'text', 'amount': 'number'},
-        'stocks':          {'ticker': 'text', 'shares': 'number'},
-        'vehicles':        {'make_model': 'text', 'year': 'number'}
+    
+    specific = {
+        "real_estate": {"address": "text", "city": "text"},
+        "cash_checking": {"bank": "text", "account_last4": "text"},
+        "bitcoin": {"wallet_type": "text", "address": "text", "amount_btc": "number"},
+        "stocks": {"ticker": "text", "shares": "number"},
+        "vehicles": {"make_model": "text", "year": "number"},
+        "precious_metals": {"type": "text", "quantity_oz": "number"},
     }
-    return {**base, **extras.get(cat, {})}
+    
+    return {**base_fields, **specific.get(category, {})}
 
 # ────────────────────────────────
-# Add form – every single widget has UNIQUE key
+# Create input form – EVERY widget MUST have unique key
 # ────────────────────────────────
-def add_form(category):
+def create_add_form(category: str):
     fields = get_fields(category)
 
-    with st.expander(f"Add → {category.replace('_', ' ').title()}", expanded=False):
+    with st.expander(f"➕ Add {category.replace('_', ' ').title()}", expanded=False):
         entry = {}
 
-        for fname, ftype in fields.items():
-            label = fname.replace('_', ' ').title()
-            key_base = f"{category}__{fname}"
+        for field_name, field_type in fields.items():
+            label = field_name.replace('_', ' ').title()
+            
+            # ── CRITICAL: unique key for every input ────────────────
+            unique_key = f"input__{category}__{field_name}__{field_type}"
 
-            if ftype == 'text':
-                entry[fname] = st.text_input(
+            if field_type == "text":
+                entry[field_name] = st.text_input(
                     label,
-                    key=f"txt__{key_base}"
+                    key=unique_key,
+                    placeholder=f"Enter {label.lower()}"
                 )
-            elif ftype == 'number':
-                entry[fname] = st.number_input(
+            elif field_type == "number":
+                entry[field_name] = st.number_input(
                     label,
                     min_value=0.0,
                     step=0.01,
-                    key=f"num__{key_base}"
+                    format="%.2f",
+                    key=unique_key
                 )
-            elif ftype == 'textarea':
-                entry[fname] = st.text_area(
+            elif field_type == "textarea":
+                entry[field_name] = st.text_area(
                     label,
-                    height=68,
-                    key=f"area__{key_base}"
+                    height=80,
+                    key=unique_key
                 )
 
-        # Save button – unique per category
-        if st.button("Save entry", key=f"save__{category}", type="primary"):
-            # Very minimal validation
-            if any(v for v in entry.values() if v not in (None, "", 0.0)):
-                st.session_state.data[category].append(entry)
-                st.success("Saved ✓")
+        # Save button - also unique
+        if st.button("Save", key=f"save__{category}", type="primary", use_container_width=True):
+            if any(value for value in entry.values() if value):
+                st.session_state.assets[category].append(entry)
+                st.success("Entry saved", icon="✅")
                 st.rerun()
             else:
-                st.error("Fill at least one field")
+                st.warning("Please fill at least one field", icon="⚠️")
 
 # ────────────────────────────────
-# Show & delete entries
+# Display saved entries + delete
 # ────────────────────────────────
-def show_entries(category):
-    items = st.session_state.data.get(category, [])
+def display_entries(category: str):
+    items = st.session_state.assets[category]
     if not items:
         return
 
-    st.markdown(f"**{category.replace('_', ' ').title()}** ({len(items)})")
+    st.markdown(f"**{category.replace('_', ' ').title()}** ({len(items)} entries)")
 
-    for idx, item in enumerate(items):
+    for idx, entry in enumerate(items):
         with st.container(border=True):
-            col1, col2 = st.columns([8,2])
+            col1, col2 = st.columns([7, 1])
             with col1:
-                st.json(item)
+                st.json(entry)
             with col2:
-                if st.button("×", key=f"del__{category}__{idx}", help="Delete"):
-                    del st.session_state.data[category][idx]
+                if st.button("🗑", key=f"delete__{category}__{idx}", help="Remove entry"):
+                    del st.session_state.assets[category][idx]
                     st.rerun()
 
 # ────────────────────────────────
-# Layout – simple columns (you can change to tabs)
+# Layout - simple columns (you can change to tabs)
 # ────────────────────────────────
-st.write("Add your assets in any category:")
+st.write("Add your assets below:")
 
-cols = st.columns(3)
-for i, category in enumerate(CATEGORIES):
-    with cols[i % 3]:
-        add_form(category)
-        show_entries(category)
+columns = st.columns(3)
+for i, cat in enumerate(CATEGORIES):
+    with columns[i % 3]:
+        create_add_form(cat)
+        display_entries(cat)
 
 # ────────────────────────────────
-# Export
+# Export section
 # ────────────────────────────────
 st.divider()
 
-all_rows = []
-for cat, entries in st.session_state.data.items():
-    for entry in entries:
-        row = entry.copy()
-        row['category'] = cat
-        all_rows.append(row)
+all_data = []
+for cat, records in st.session_state.assets.items():
+    for record in records:
+        flat = record.copy()
+        flat["category"] = cat
+        all_data.append(flat)
 
-if all_rows:
-    df = pd.DataFrame(all_rows)
+if all_data:
+    df = pd.DataFrame(all_data)
 
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", csv, "inventory.csv", "text/csv")
+    st.download_button(
+        label="Download CSV",
+        data=df.to_csv(index=False).encode('utf-8'),
+        file_name="assets_inventory.csv",
+        mime="text/csv"
+    )
 
-    # Very minimal PDF
+    # Simple PDF export
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", "B", 16)
     pdf.cell(0, 10, "Asset Inventory", ln=True, align="C")
 
     for cat, group in df.groupby("category"):
-        pdf.ln(5)
+        pdf.ln(8)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 8, cat.replace('_', ' ').title(), ln=True)
         pdf.set_font("Arial", size=10)
         pdf.multi_cell(0, 6, group.drop("category", axis=1).to_string(index=False))
 
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    b64 = base64.b64encode(pdf_bytes).decode()
+    pdf_output = pdf.output(dest='S').encode('latin-1')
+    pdf_base64 = base64.b64encode(pdf_output).decode('utf-8')
+    
     st.markdown(
-        f'<a href="data:application/pdf;base64,{b64}" download="inventory.pdf">Download PDF</a>',
+        f'<a href="data:application/pdf;base64,{pdf_base64}" download="assets_inventory.pdf">'
+        'Download PDF</a>',
         unsafe_allow_html=True
     )
-else:
-    st.info("No data yet")
