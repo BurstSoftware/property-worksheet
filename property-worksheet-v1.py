@@ -4,263 +4,256 @@ from fpdf import FPDF
 import base64
 import io
 
-# ────────────────────────────────────────────────
-# Initialize session state
-# ────────────────────────────────────────────────
-if 'data' not in st.session_state:
-    st.session_state.data = {
+# ───────────────────────────────────────────────────────────────
+# Session state initialization
+# ───────────────────────────────────────────────────────────────
+if 'assets' not in st.session_state:
+    st.session_state.assets = {
         'real_estate': [],
         'cash_checking': [],
-        'savings_money_market': [],
+        'savings_mm': [],
         'bitcoin': [],
-        'other_digital_currency': [],
-        'certificates_of_deposit': [],
+        'other_crypto': [],
+        'cds': [],
         'credit_cards': [],
-        'debit_cards': [],
-        'alt_coins': [],
-        'local_currencies': [],
-        'barter_units': [],
         'precious_metals': [],
+        'stocks_listed': [],
+        'stocks_unlisted': [],
         'mutual_funds': [],
-        'listed_stocks': [],
-        'unlisted_stocks': [],
-        'government_bonds': [],
-        'corporate_bonds': [],
-        'municipal_bonds': [],
-        'annuities': [],
+        'bonds_gov': [],
+        'bonds_corp': [],
+        'bonds_muni': [],
         'iras': [],
-        'keoghs': [],
         'roth_iras': [],
-        '401k': [],
-        '403b': [],
-        'automobiles': [],
-        'trucks': [],
-        'recreational_vehicles': [],
-        'planes': [],
-        'boats': [],
-        'other_vehicles': [],
-        'household_goods': [],
-        'valuable_clothing': [],
-        'jewelry_furs': [],
-        'collectables': [],
-        'tools_equipment': [],
-        'other_personal_property': [],
-        'livestock': [],
-        'money_owed': [],
-        'death_benefits': [],
+        '401k_403b': [],
+        'vehicles': [],
+        'boats_planes': [],
+        'jewelry_collectibles': [],
+        'household_valuables': [],
         'life_insurance': [],
-        'miscellaneous': [],
-        'email_accounts': [],
-        'facebook': [],
-        'instagram': [],
-        'linkedin': [],
-        'twitter': [],
+        'notes_receivable': [],
+        'digital_accounts': [],
+        'social_media': [],
         'subscriptions': [],
-        'marketplace_accounts': [],
-        'apps': [],
-        'photos': [],
-        'books': [],
-        'music': [],
-        'videos': [],
-        'file_sharing': [],
-        'financial_accounts': [],
-        'medical_accounts': [],
-        'insurance_accounts': [],
-        'blogs_websites': [],
-        'domain_names': [],
-        'third_party_hosts': [],
-        'utilities': [],
-        'computer_data': [],
-        'contact_lists': [],
-        'tax_prep': [],
-        'partnerships': [],
-        'sole_proprietorships': [],
-        'limited_partnerships': [],
-        'llcs': [],
-        'corporations': []
+        'domains_websites': [],
+        'business_entities': []
     }
 
-st.title("Personal Asset & Digital Inventory Manager")
+st.title("Personal & Family Asset Inventory")
+st.caption("Securely track assets — export CSV/PDF")
 
-# ────────────────────────────────────────────────
-# Helper function to add new entry
-# ────────────────────────────────────────────────
-def add_entry(category, fields):
-    expander_title = f"Add {category.replace('_', ' ').title()}"
-    with st.expander(expander_title, expanded=False):
+# ───────────────────────────────────────────────────────────────
+# Helper: Add new entry form
+# ───────────────────────────────────────────────────────────────
+def add_asset_form(category: str, fields: dict):
+    """Create input form with UNIQUE keys for every widget"""
+    with st.expander(f"➕ Add to {category.replace('_', ' ').title()}", expanded=False):
         entry = {}
-        
-        for field, input_type in fields.items():
-            label = field.replace('_', ' ').title()
-            # Unique key: category + field
-            key = f"input__{category}__{field}"
-            
-            if input_type == 'text':
-                entry[field] = st.text_input(label, key=key)
-            elif input_type == 'number':
-                entry[field] = st.number_input(label, min_value=0.0, format="%.2f", key=key)
-            elif input_type == 'textarea':
-                entry[field] = st.text_area(label, height=80, key=key)
-        
-        # Unique save button key
-        save_key = f"save__{category}"
-        if st.button(f"Save {category.replace('_', ' ').title()}", key=save_key):
-            # Basic validation: at least one meaningful field filled
-            if any(v not in (None, "", 0.0) for v in entry.values()):
-                st.session_state.data[category].append(entry)
-                st.success(f"Entry added to {category.replace('_', ' ').title()}!")
-                # Optional: clear inputs by forcing rerun
+
+        for field_name, field_type in fields.items():
+            label = field_name.replace('_', ' ').title()
+            # ── VERY IMPORTANT: unique key pattern ───────────────────────
+            base_key = f"{category}__{field_name}"
+
+            if field_type == 'text':
+                entry[field_name] = st.text_input(
+                    label,
+                    key=f"{base_key}__text",
+                    placeholder=f"Enter {label.lower()}"
+                )
+            elif field_type == 'number':
+                entry[field_name] = st.number_input(
+                    label,
+                    min_value=0.0,
+                    step=100.0,
+                    format="%.2f",
+                    key=f"{base_key}__num"
+                )
+            elif field_type == 'textarea':
+                entry[field_name] = st.text_area(
+                    label,
+                    height=88,
+                    key=f"{base_key}__area"
+                )
+
+        # Save button — also needs unique key
+        if st.button("💾 Save Entry", key=f"{category}__SAVE", use_container_width=True):
+            # Minimal validation — at least something filled
+            if any(v for v in entry.values() if v not in (None, "", 0.0, 0)):
+                st.session_state.assets[category].append(entry)
+                st.success("Entry saved!", icon="✅")
                 st.rerun()
             else:
-                st.warning("Please fill in at least some information.")
+                st.warning("Please fill at least one field", icon="⚠️")
 
-# ────────────────────────────────────────────────
-# Helper function to show & delete entries
-# ────────────────────────────────────────────────
-def display_entries(category):
-    entries = st.session_state.data.get(category, [])
-    if entries:
-        st.subheader(f"{category.replace('_', ' ').title()} ({len(entries)})")
-        
-        for i, entry in enumerate(entries):
-            with st.container(border=True):
-                st.markdown(f"**Entry {i+1}**")
-                st.json(entry)  # nice readable view
-                
-                # Unique delete key
-                delete_key = f"delete__{category}__{i}"
-                if st.button("🗑️ Delete", key=delete_key):
-                    del st.session_state.data[category][i]
-                    st.success("Entry deleted")
+# ───────────────────────────────────────────────────────────────
+# Helper: Display & delete entries
+# ───────────────────────────────────────────────────────────────
+def show_entries(category: str):
+    items = st.session_state.assets.get(category, [])
+    if not items:
+        return
+
+    st.subheader(f"{category.replace('_', ' ').title()}  ({len(items)})")
+
+    for idx, record in enumerate(items):
+        with st.container(border=True):
+            col1, col2 = st.columns([5,1])
+            with col1:
+                st.json(record)
+            with col2:
+                if st.button("🗑", key=f"{category}__DEL__{idx}", help="Delete this entry"):
+                    del st.session_state.assets[category][idx]
                     st.rerun()
 
-# ────────────────────────────────────────────────
-# Define fields for each category
-# ────────────────────────────────────────────────
-categories = {
-    'real_estate': {'address': 'text', 'value': 'number', 'description': 'textarea'},
-    'cash_checking': {'account_number': 'text', 'balance': 'number', 'bank': 'text'},
-    'savings_money_market': {'account_number': 'text', 'balance': 'number', 'bank': 'text'},
-    'bitcoin': {'wallet_address': 'text', 'amount_btc': 'number', 'current_value_usd': 'number'},
-    'other_digital_currency': {'currency_type': 'text', 'wallet_address': 'text', 'amount': 'number'},
-    'certificates_of_deposit': {'issuer': 'text', 'amount': 'number', 'maturity_date': 'text'},
-    'credit_cards': {'card_number_last4': 'text', 'issuer': 'text', 'balance': 'number'},
-    'debit_cards': {'card_number_last4': 'text', 'issuer': 'text', 'linked_account': 'text'},
-    'alt_coins': {'coin_type': 'text', 'amount': 'number', 'wallet': 'text'},
-    'precious_metals': {'metal_type': 'text', 'quantity_oz': 'number', 'current_value': 'number'},
-    'mutual_funds': {'fund_name': 'text', 'shares': 'number', 'current_value': 'number'},
-    'listed_stocks': {'symbol': 'text', 'shares': 'number', 'current_value': 'number'},
-    'iras': {'account_number': 'text', 'balance': 'number', 'provider': 'text'},
-    'roth_iras': {'account_number': 'text', 'balance': 'number', 'provider': 'text'},
-    '401k': {'account_number': 'text', 'balance': 'number', 'employer': 'text'},
-    'automobiles': {'make_model': 'text', 'year': 'number', 'value': 'number'},
-    'boats': {'make_model': 'text', 'registration': 'text', 'value': 'number'},
-    'household_goods': {'description': 'textarea', 'estimated_value': 'number'},
-    'jewelry_furs': {'description': 'textarea', 'estimated_value': 'number'},
-    'collectables': {'type': 'text', 'description': 'textarea', 'value': 'number'},
-    'money_owed': {'debtor': 'text', 'amount': 'number', 'description': 'textarea'},
-    'life_insurance': {'policy_number': 'text', 'provider': 'text', 'cash_value': 'number'},
-    'email_accounts': {'email': 'text', 'provider': 'text', 'notes': 'textarea'},
-    'subscriptions': {'service': 'text', 'account_email': 'text', 'notes': 'textarea'},
-    'marketplace_accounts': {'platform': 'text', 'username': 'text', 'notes': 'textarea'},
-    'blogs_websites': {'url': 'text', 'notes': 'textarea'},
-    'corporations': {'name': 'text', 'details': 'textarea'},
-    # Add more categories here following the same pattern...
-    # For brevity I only included a subset — copy the pattern for remaining categories
+# ───────────────────────────────────────────────────────────────
+# Field definitions (you can expand this a lot more)
+# ───────────────────────────────────────────────────────────────
+field_sets = {
+    'real_estate': {
+        'address': 'text',
+        'city_state_zip': 'text',
+        'estimated_value': 'number',
+        'mortgage_balance': 'number',
+        'notes': 'textarea'
+    },
+    'cash_checking': {
+        'bank': 'text',
+        'account_type': 'text',
+        'account_last4': 'text',
+        'balance': 'number'
+    },
+    'bitcoin': {
+        'wallet_type': 'text',
+        'address': 'text',
+        'amount_btc': 'number',
+        'current_value_usd': 'number'
+    },
+    'precious_metals': {
+        'type': 'text',
+        'quantity_oz': 'number',
+        'purchase_price': 'number',
+        'current_value': 'number'
+    },
+    'stocks_listed': {
+        'ticker': 'text',
+        'shares': 'number',
+        'current_value': 'number'
+    },
+    'iras': {
+        'provider': 'text',
+        'account_type': 'text',
+        'balance': 'number'
+    },
+    'vehicles': {
+        'make_model_year': 'text',
+        'vin_last6': 'text',
+        'mileage': 'number',
+        'estimated_value': 'number'
+    },
+    'life_insurance': {
+        'company': 'text',
+        'policy_number': 'text',
+        'face_amount': 'number',
+        'cash_value': 'number'
+    },
+    'digital_accounts': {
+        'service': 'text',
+        'username_email': 'text',
+        'notes_2fa': 'textarea'
+    },
+    'business_entities': {
+        'entity_name': 'text',
+        'type': 'text',
+        'ownership_percentage': 'number',
+        'estimated_value': 'number'
+    }
+    # Add many more categories following the same pattern...
 }
 
-# ────────────────────────────────────────────────
-# Organize categories into tabs
-# ────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Real Estate & Property",
-    "Cash & Investments",
-    "Vehicles & Personal Items",
-    "Digital & Online Assets",
-    "Business & Other"
-])
+# ───────────────────────────────────────────────────────────────
+# Main layout — Tabs
+# ───────────────────────────────────────────────────────────────
+tab_names = ["Property", "Banking & Crypto", "Investments", "Vehicles & Valuables", "Digital & Other"]
 
-with tab1:
-    add_entry('real_estate', categories.get('real_estate', {}))
-    display_entries('real_estate')
+tabs = st.tabs(tab_names)
 
-with tab2:
-    for cat in [
-        'cash_checking', 'savings_money_market', 'bitcoin', 'other_digital_currency',
-        'certificates_of_deposit', 'precious_metals', 'mutual_funds', 'listed_stocks',
-        'iras', 'roth_iras', '401k'
-    ]:
-        if cat in categories:
-            add_entry(cat, categories[cat])
-            display_entries(cat)
+with tabs[0]:
+    add_asset_form('real_estate', field_sets.get('real_estate', {}))
+    show_entries('real_estate')
 
-with tab3:
-    for cat in [
-        'automobiles', 'boats', 'household_goods', 'jewelry_furs',
-        'collectables', 'money_owed', 'life_insurance'
-    ]:
-        if cat in categories:
-            add_entry(cat, categories[cat])
-            display_entries(cat)
+with tabs[1]:
+    for cat in ['cash_checking', 'bitcoin']:
+        if cat in field_sets:
+            add_asset_form(cat, field_sets[cat])
+            show_entries(cat)
 
-with tab4:
-    for cat in [
-        'email_accounts', 'subscriptions', 'marketplace_accounts', 'blogs_websites'
-    ]:
-        if cat in categories:
-            add_entry(cat, categories[cat])
-            display_entries(cat)
+with tabs[2]:
+    for cat in ['precious_metals', 'stocks_listed', 'iras']:
+        if cat in field_sets:
+            add_asset_form(cat, field_sets[cat])
+            show_entries(cat)
 
-with tab5:
-    for cat in ['corporations']:
-        if cat in categories:
-            add_entry(cat, categories[cat])
-            display_entries(cat)
+with tabs[3]:
+    for cat in ['vehicles', 'life_insurance']:
+        if cat in field_sets:
+            add_asset_form(cat, field_sets[cat])
+            show_entries(cat)
 
-# ────────────────────────────────────────────────
-# Download Section
-# ────────────────────────────────────────────────
-st.header("Export Your Data")
+with tabs[4]:
+    for cat in ['digital_accounts', 'business_entities']:
+        if cat in field_sets:
+            add_asset_form(cat, field_sets[cat])
+            show_entries(cat)
 
-all_entries = []
-for cat, items in st.session_state.data.items():
-    for item in items:
-        item_copy = item.copy()
-        item_copy['Category'] = cat.replace('_', ' ').title()
-        all_entries.append(item_copy)
+# ───────────────────────────────────────────────────────────────
+# Export
+# ───────────────────────────────────────────────────────────────
+st.divider()
+st.subheader("Export Inventory")
 
-if all_entries:
-    df = pd.DataFrame(all_entries)
-    
-    csv = df.to_csv(index=False).encode('utf-8')
+flat_data = []
+for cat, records in st.session_state.assets.items():
+    for rec in records:
+        row = rec.copy()
+        row['Category'] = cat.replace('_', ' ').title()
+        flat_data.append(row)
+
+if flat_data:
+    df = pd.DataFrame(flat_data)
+
+    # CSV
+    csv_data = df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        "📥 Download as CSV",
-        data=csv,
-        file_name="personal_asset_inventory.csv",
-        mime="text/csv"
+        label="Download CSV",
+        data=csv_data,
+        file_name="asset_inventory.csv",
+        mime="text/csv",
+        use_container_width=True
     )
 
-    # PDF Generation
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Personal Asset & Digital Inventory", ln=True, align="C")
-    pdf.ln(10)
+    # PDF (very simple version)
+    if st.button("Generate PDF Report", use_container_width=True):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 12, "Asset Inventory Report", ln=1, align="C")
+        pdf.ln(8)
 
-    for cat, group in df.groupby('Category'):
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, cat, ln=True)
-        pdf.set_font("Arial", "", 10)
-        pdf.multi_cell(0, 8, group.drop('Category', axis=1).to_string(index=False))
-        pdf.ln(5)
+        for category, group in df.groupby("Category"):
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, category, ln=1)
+            pdf.set_font("Arial", "", 10)
+            pdf.multi_cell(0, 7, group.drop(columns="Category").to_string(index=False))
+            pdf.ln(6)
 
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
-    
-    st.markdown(
-        f'<a href="data:application/pdf;base64,{pdf_b64}" download="personal_asset_inventory.pdf">'
-        '📄 Download as PDF</a>',
-        unsafe_allow_html=True
-    )
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+
+        st.markdown(
+            f'<a href="data:application/pdf;base64,{b64_pdf}" download="asset_inventory.pdf">'
+            '📄 Download PDF Report</a>',
+            unsafe_allow_html=True
+        )
 else:
-    st.info("No entries added yet. Start adding your assets above!")
+    st.info("No assets recorded yet.")
