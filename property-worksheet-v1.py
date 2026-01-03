@@ -7,141 +7,154 @@ import io
 # ────────────────────────────────
 # Session state
 # ────────────────────────────────
-if 'assets' not in st.session_state:
-    st.session_state.assets = {}
+if 'data' not in st.session_state:
+    st.session_state.data = {}
 
-# List of categories you want (add/remove as needed)
+# Minimal set of categories (expand as needed)
 CATEGORIES = [
     'real_estate',
     'cash_checking',
     'bitcoin',
     'stocks',
-    'retirement',
+    'retirement_accounts',
     'vehicles',
-    'jewelry_collectibles',
-    'digital_accounts',
-    'business'
+    'personal_property',
+    'digital_assets'
 ]
 
-# Initialize empty lists
 for cat in CATEGORIES:
-    if cat not in st.session_state.assets:
-        st.session_state.assets[cat] = []
+    if cat not in st.session_state.data:
+        st.session_state.data[cat] = []
 
-st.title("Simple Asset Inventory")
+st.title("Asset Inventory – Fixed Version")
 
 # ────────────────────────────────
-# Very simple field definition per category
-# You can expand later
+# Field definition per category
 # ────────────────────────────────
-def get_fields(category):
-    common = {
+def get_fields(cat):
+    base = {
         'description': 'text',
-        'value_usd': 'number',
+        'value': 'number',
         'notes': 'textarea'
     }
-
-    specifics = {
-        'real_estate': {'address': 'text'},
-        'cash_checking': {'bank': 'text', 'account_last4': 'text'},
-        'bitcoin': {'wallet': 'text', 'amount_btc': 'number'},
-        'stocks': {'ticker': 'text', 'shares': 'number'},
-        'vehicles': {'make_model': 'text', 'year': 'number'},
+    extras = {
+        'real_estate':     {'address': 'text'},
+        'cash_checking':   {'bank': 'text', 'account': 'text'},
+        'bitcoin':         {'wallet': 'text', 'amount': 'number'},
+        'stocks':          {'ticker': 'text', 'shares': 'number'},
+        'vehicles':        {'make_model': 'text', 'year': 'number'}
     }
-
-    return {**common, **specifics.get(category, {})}
+    return {**base, **extras.get(cat, {})}
 
 # ────────────────────────────────
-# Add entry form - EVERY widget has unique key
+# Add form – every single widget has UNIQUE key
 # ────────────────────────────────
-def add_form(cat):
-    fields = get_fields(cat)
+def add_form(category):
+    fields = get_fields(category)
 
-    with st.expander(f"Add {cat.replace('_', ' ').title()}", expanded=False):
-        values = {}
+    with st.expander(f"Add → {category.replace('_', ' ').title()}", expanded=False):
+        entry = {}
 
         for fname, ftype in fields.items():
             label = fname.replace('_', ' ').title()
-            key_prefix = f"{cat}__{fname}"
+            key_base = f"{category}__{fname}"
 
             if ftype == 'text':
-                values[fname] = st.text_input(label, key=f"{key_prefix}__txt")
+                entry[fname] = st.text_input(
+                    label,
+                    key=f"txt__{key_base}"
+                )
             elif ftype == 'number':
-                values[fname] = st.number_input(label, min_value=0.0, key=f"{key_prefix}__num")
+                entry[fname] = st.number_input(
+                    label,
+                    min_value=0.0,
+                    step=0.01,
+                    key=f"num__{key_base}"
+                )
             elif ftype == 'textarea':
-                values[fname] = st.text_area(label, key=f"{key_prefix}__txta")
+                entry[fname] = st.text_area(
+                    label,
+                    height=68,
+                    key=f"area__{key_base}"
+                )
 
-        if st.button("Save", key=f"{cat}__save"):
-            if any(v for v in values.values() if v):  # at least something filled
-                st.session_state.assets[cat].append(values)
-                st.success("Saved", icon="✅")
+        # Save button – unique per category
+        if st.button("Save entry", key=f"save__{category}", type="primary"):
+            # Very minimal validation
+            if any(v for v in entry.values() if v not in (None, "", 0.0)):
+                st.session_state.data[category].append(entry)
+                st.success("Saved ✓")
                 st.rerun()
             else:
-                st.warning("Fill something", icon="⚠️")
+                st.error("Fill at least one field")
 
 # ────────────────────────────────
 # Show & delete entries
 # ────────────────────────────────
-def show_entries(cat):
-    items = st.session_state.assets[cat]
+def show_entries(category):
+    items = st.session_state.data.get(category, [])
     if not items:
         return
 
-    st.subheader(f"{cat.replace('_', ' ').title()} ({len(items)})")
+    st.markdown(f"**{category.replace('_', ' ').title()}** ({len(items)})")
 
-    for i, item in enumerate(items):
+    for idx, item in enumerate(items):
         with st.container(border=True):
-            st.json(item)
-            if st.button("Delete", key=f"{cat}__del__{i}"):
-                del st.session_state.assets[cat][i]
-                st.rerun()
+            col1, col2 = st.columns([8,2])
+            with col1:
+                st.json(item)
+            with col2:
+                if st.button("×", key=f"del__{category}__{idx}", help="Delete"):
+                    del st.session_state.data[category][idx]
+                    st.rerun()
 
 # ────────────────────────────────
-# Main layout
+# Layout – simple columns (you can change to tabs)
 # ────────────────────────────────
+st.write("Add your assets in any category:")
+
 cols = st.columns(3)
-for i, cat in enumerate(CATEGORIES):
+for i, category in enumerate(CATEGORIES):
     with cols[i % 3]:
-        add_form(cat)
-        show_entries(cat)
+        add_form(category)
+        show_entries(category)
 
 # ────────────────────────────────
 # Export
 # ────────────────────────────────
 st.divider()
-if any(st.session_state.assets.values()):
-    flat = []
-    for cat, records in st.session_state.assets.items():
-        for r in records:
-            row = r.copy()
-            row['Category'] = cat
-            flat.append(row)
 
-    df = pd.DataFrame(flat)
+all_rows = []
+for cat, entries in st.session_state.data.items():
+    for entry in entries:
+        row = entry.copy()
+        row['category'] = cat
+        all_rows.append(row)
 
-    st.download_button(
-        "Download CSV",
-        df.to_csv(index=False).encode('utf-8'),
-        "assets.csv",
-        "text/csv"
-    )
+if all_rows:
+    df = pd.DataFrame(all_rows)
 
-    # Very basic PDF
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button("Download CSV", csv, "inventory.csv", "text/csv")
+
+    # Very minimal PDF
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Asset Inventory", ln=1, align='C')
+    pdf.cell(0, 10, "Asset Inventory", ln=True, align="C")
 
-    for cat, group in df.groupby('Category'):
+    for cat, group in df.groupby("category"):
         pdf.ln(5)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 8, cat, ln=True)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 8, cat.replace('_', ' ').title(), ln=True)
         pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 6, group.drop('Category', axis=1).to_string(index=False))
+        pdf.multi_cell(0, 6, group.drop("category", axis=1).to_string(index=False))
 
     pdf_bytes = pdf.output(dest='S').encode('latin-1')
     b64 = base64.b64encode(pdf_bytes).decode()
-    st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="assets.pdf">Download PDF</a>', unsafe_allow_html=True)
-
+    st.markdown(
+        f'<a href="data:application/pdf;base64,{b64}" download="inventory.pdf">Download PDF</a>',
+        unsafe_allow_html=True
+    )
 else:
-    st.info("No assets yet")
+    st.info("No data yet")
