@@ -3,142 +3,139 @@ import pandas as pd
 from fpdf import FPDF
 import base64
 import io
-import datetime
+from datetime import datetime
 
 # ────────────────────────────────────────────────
 # Session state
 # ────────────────────────────────────────────────
-if 'assets' not in st.session_state:
-    st.session_state.assets = []
+if 'inventory' not in st.session_state:
+    st.session_state.inventory = []
 
-st.title("Asset & Digital Inventory")
-st.caption("Single-form entry • No duplicate widget errors")
+st.set_page_config(page_title="Asset Inventory", layout="wide")
+st.title("Personal Asset & Digital Inventory")
+st.caption("2026 edition — single-form approach • no duplicate widget errors")
 
 # ────────────────────────────────────────────────
-# Category definitions + fields
+# Category → fields mapping
 # ────────────────────────────────────────────────
-CATEGORIES = {
-    "Real Estate": {
-        "address": ("text", "Street address"),
-        "city_state_zip": ("text", "City, State ZIP"),
-        "estimated_value": ("number", "Estimated current value $"),
-        "mortgage_balance": ("number", "Outstanding mortgage $"),
-        "notes": ("textarea", "Notes / description")
-    },
-    "Bank / Checking / Savings": {
-        "bank_name": ("text", "Bank / Institution"),
-        "account_type": ("text", "Account type"),
-        "last_4": ("text", "Last 4 digits"),
-        "balance": ("number", "Current balance $")
-    },
-    "Cryptocurrency": {
-        "coin": ("text", "Coin / Token"),
-        "wallet_type": ("text", "Wallet / exchange"),
-        "address": ("text", "Address / public key"),
-        "amount": ("number", "Amount held"),
-        "current_value_usd": ("number", "Approx. current value $")
-    },
-    "Stocks / ETFs": {
-        "ticker": ("text", "Ticker symbol"),
-        "shares": ("number", "Number of shares"),
-        "current_value": ("number", "Current total value $")
-    },
-    "Retirement Accounts": {
-        "provider": ("text", "Provider / Custodian"),
-        "account_type": ("text", "IRA / Roth / 401k / etc"),
-        "balance": ("number", "Current balance $")
-    },
-    "Vehicles": {
-        "make_model_year": ("text", "Make, Model, Year"),
-        "vin_last6": ("text", "VIN last 6 digits"),
-        "mileage": ("number", "Current mileage"),
-        "estimated_value": ("number", "Estimated value $")
-    },
-    "Precious Metals / Collectibles": {
-        "type": ("text", "Type (gold / art / coins / etc)"),
-        "quantity_description": ("text", "Quantity / description"),
-        "estimated_value": ("number", "Estimated current value $")
-    },
-    "Digital Assets / Accounts": {
-        "service_platform": ("text", "Service / Platform"),
-        "username_email": ("text", "Username / Email"),
-        "notes": ("textarea", "Notes / 2FA info / recovery")
-    },
-    "Other / Miscellaneous": {
-        "description": ("textarea", "Description of asset"),
-        "estimated_value": ("number", "Estimated value $"),
-        "notes": ("textarea", "Additional notes")
-    }
+CATEGORY_FIELDS = {
+    "Real Estate": [
+        ("address", "text", "Full address"),
+        ("city_state_zip", "text", "City, State ZIP"),
+        ("estimated_value", "number", "Current estimated value $"),
+        ("mortgage_balance", "number", "Remaining mortgage $ (0 if none)"),
+        ("notes", "textarea", "Notes / condition / liens")
+    ],
+    "Bank Accounts / Cash": [
+        ("institution", "text", "Bank / Credit Union"),
+        ("account_type", "text", "Checking / Savings / MM / CD"),
+        ("last_4", "text", "Last 4 digits"),
+        ("balance", "number", "Current balance $")
+    ],
+    "Cryptocurrency": [
+        ("coin", "text", "BTC / ETH / SOL / etc"),
+        ("wallet_exchange", "text", "Wallet or Exchange name"),
+        ("address_key", "text", "Address / Public key"),
+        ("amount", "number", "Amount held"),
+        ("approx_value_usd", "number", "Approximate current value $")
+    ],
+    "Stocks & Investments": [
+        ("ticker_symbol", "text", "Ticker (or fund name)"),
+        ("shares_quantity", "number", "Shares / Units"),
+        ("current_value", "number", "Total current value $")
+    ],
+    "Retirement Accounts": [
+        ("provider", "text", "Fidelity / Vanguard / etc"),
+        ("account_type", "text", "IRA / Roth IRA / 401k / 403b"),
+        ("balance", "number", "Current balance $")
+    ],
+    "Vehicles": [
+        ("make_model_year", "text", "Make Model Year"),
+        ("mileage", "number", "Current mileage"),
+        ("estimated_value", "number", "Estimated private sale value $")
+    ],
+    "Precious Metals / Collectibles / Jewelry": [
+        ("type", "text", "Gold / Silver / Coins / Art / Watches..."),
+        ("description", "textarea", "Description / weight / carats"),
+        ("estimated_value", "number", "Current estimated value $")
+    ],
+    "Digital / Online Assets": [
+        ("service_platform", "text", "Google / Apple / Facebook / Domain / Email..."),
+        ("username", "text", "Username / Email"),
+        ("notes", "textarea", "Recovery info / importance / 2FA")
+    ],
+    "Other / Business / Miscellaneous": [
+        ("item_name", "text", "Name / Description"),
+        ("estimated_value", "number", "Estimated value $"),
+        ("notes", "textarea", "Additional information")
+    ]
 }
 
 # ────────────────────────────────────────────────
-# Main entry form — ONLY ONE set of widgets at a time
+# Single dynamic form
 # ────────────────────────────────────────────────
-st.subheader("Add New Asset")
+st.subheader("Add New Item")
 
-col1, col2 = st.columns([3,1])
+category = st.selectbox("Category", options=list(CATEGORY_FIELDS.keys()), index=0)
 
-with col1:
-    selected_category = st.selectbox(
-        "Category",
-        options=list(CATEGORIES.keys()),
-        key="category_selector"
-    )
+entry = {"category": category, "added": datetime.now().strftime("%Y-%m-%d %H:%M")}
 
-current_fields = CATEGORIES[selected_category]
+fields = CATEGORY_FIELDS[category]
 
-entry = {}
+cols = st.columns([3, 2])
 
-# Create only the fields for the currently selected category
-for field_key, (ftype, label) in current_fields.items():
-    # Unique keys using field_key + timestamp to be extra safe
-    safe_key = f"entry_{field_key}_{int(datetime.datetime.now().timestamp() * 1000)}"
+with cols[0]:
+    for field_name, ftype, label in fields:
+        key = f"new_entry__{category}__{field_name}"
 
-    if ftype == "text":
-        entry[field_key] = st.text_input(label, key=safe_key)
-    elif ftype == "number":
-        entry[field_key] = st.number_input(
-            label,
-            min_value=0.0,
-            step=100.0,
-            format="%.2f",
-            key=safe_key
-        )
-    elif ftype == "textarea":
-        entry[field_key] = st.text_area(label, height=90, key=safe_key)
+        if ftype == "text":
+            entry[field_name] = st.text_input(label, key=key)
+        elif ftype == "number":
+            entry[field_name] = st.number_input(
+                label, min_value=0.0, step=100.0, format="%.2f", key=key
+            )
+        elif ftype == "textarea":
+            entry[field_name] = st.text_area(label, height=85, key=key)
 
-# Category is saved with the entry
-entry["category"] = selected_category
-entry["added"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-if st.button("Save Asset", type="primary", use_container_width=True):
-    has_content = any(v for v in entry.values() if v not in (None, "", 0.0))
-    if has_content:
-        st.session_state.assets.append(entry)
-        st.success("Asset saved", icon="✅")
-        # Clear form by forcing rerun (Streamlit will reset inputs)
-        st.rerun()
-    else:
-        st.warning("Please fill in at least one field")
+with cols[1]:
+    st.markdown(" ")
+    st.markdown(" ")
+    if st.button("➕ Save Item", type="primary", use_container_width=True):
+        # Minimal validation - at least something meaningful filled
+        meaningful = False
+        for v in entry.values():
+            if isinstance(v, (int, float)) and v > 0:
+                meaningful = True
+            elif isinstance(v, str) and v.strip():
+                meaningful = True
+        if meaningful:
+            st.session_state.inventory.append(entry)
+            st.success("Item saved", icon="✅")
+            st.rerun()
+        else:
+            st.error("Please fill in at least one meaningful field")
 
 # ────────────────────────────────────────────────
-# Display existing entries
+# Show existing items
 # ────────────────────────────────────────────────
 st.divider()
 
-if st.session_state.assets:
-    st.subheader(f"Stored Assets ({len(st.session_state.assets)})")
+if st.session_state.inventory:
+    st.subheader(f"Stored Items  ({len(st.session_state.inventory)})")
 
-    for i, asset in enumerate(st.session_state.assets):
-        with st.expander(
-            f"{asset['category']} – {asset.get('description', asset.get('address', 'Item'))} "
-            f"(${asset.get('estimated_value', asset.get('current_value', asset.get('balance', 0))):,.0f})"
-        ):
-            st.json(asset)
+    for i, item in enumerate(st.session_state.inventory):
+        cat = item["category"]
+        value_field = next((k for k in item if "value" in k.lower() or "balance" in k.lower()), None)
+        title_value = f"${item.get(value_field, 0):,.0f}" if value_field else ""
 
-            if st.button("Delete this entry", key=f"delete_asset_{i}"):
-                st.session_state.assets.pop(i)
-                st.rerun()
+        with st.expander(f"{cat} – {title_value}", expanded=False):
+            st.json(item)
+
+            col_left, col_right = st.columns([8, 2])
+            with col_right:
+                if st.button("Delete", key=f"del_{i}", type="secondary"):
+                    st.session_state.inventory.pop(i)
+                    st.rerun()
 
 # ────────────────────────────────────────────────
 # Export
@@ -146,42 +143,39 @@ if st.session_state.assets:
 st.divider()
 st.subheader("Export")
 
-if st.session_state.assets:
-    df = pd.DataFrame(st.session_state.assets)
+if st.session_state.inventory:
+    df = pd.DataFrame(st.session_state.inventory)
 
-    csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
-        "Download CSV",
-        csv,
-        "assets_inventory.csv",
-        "text/csv",
-        use_container_width=True
+        label="Download as CSV",
+        data=df.to_csv(index=False).encode('utf-8'),
+        file_name="asset_inventory.csv",
+        mime="text/csv"
     )
 
-    # Simple PDF
+    # Simple PDF export
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 12, "Asset Inventory Report", ln=True, align="C")
-    pdf.ln(10)
+    pdf.cell(0, 10, "Asset Inventory - " + datetime.now().strftime("%Y-%m-%d"), ln=True, align="C")
 
-    for asset in st.session_state.assets:
-        cat = asset["category"]
+    for item in st.session_state.inventory:
+        pdf.ln(6)
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, cat, ln=True)
-        pdf.set_font("Arial", size=10)
-        for k, v in asset.items():
+        pdf.cell(0, 8, item["category"], ln=True)
+        pdf.set_font("Arial", "", 10)
+
+        for k, v in item.items():
             if k not in ["category", "added"]:
-                pdf.cell(0, 6, f"{k.replace('_', ' ').title()}: {v}", ln=True)
-        pdf.ln(5)
+                pdf.multi_cell(0, 6, f"{k.replace('_',' ').title()}: {v}")
 
     pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    pdf_b64 = base64.b64encode(pdf_bytes).decode()
 
     st.markdown(
-        f'<a href="data:application/pdf;base64,{pdf_b64}" download="assets_inventory.pdf">'
-        'Download PDF Report</a>',
+        f'<a href="data:application/pdf;base64,{pdf_b64}" download="asset_inventory.pdf">'
+        'Download PDF</a>',
         unsafe_allow_html=True
     )
 else:
-    st.info("No assets recorded yet.")
+    st.info("No items added yet")
